@@ -1,0 +1,18 @@
+<resources>
+    <string name="app_name">Overlay Downloader</string>
+    <string name="enable_overlay">Habilitar sobreposição</string>
+    <string name="stop_overlay">Parar botão flutuante</string>
+    <string name="status_overlay_disabled">Sobreposição desativada</string>
+    <string name="status_overlay_enabled">Botão flutuante ativo</string>
+    <string name="instructions">Copie o link de uma publicação ou reel do Instagram, toque no botão flutuante e a foto em alta resolução será salva em Pictures/OverlayDownloads.</string>
+    <string name="overlay_button_description">Baixar foto do link copiado</string>
+    <string name="notification_channel_name">Botão flutuante</string>
+    <string name="notification_channel_description">Mantém o botão flutuante ativo sobre outros aplicativos.</string>
+    <string name="notification_title">Botão flutuante ativo</string>
+    <string name="notification_text">Toque no botão para baixar a foto do link copiado.</string>
+    <string name="error_no_link">Nenhum link encontrado na área de transferência.</string>
+    <string name="error_invalid_link">O link copiado não é de uma publicação ou reel do Instagram.</string>
+    <string name="error_download_failed">Não foi possível baixar a foto. Verifique o link e a conexão.</string>
+    <string name="success_downloaded">Foto salva em Pictures/OverlayDownloads.</string>
+    <string name="downloading">Baixando foto…</string>
+</resources>
