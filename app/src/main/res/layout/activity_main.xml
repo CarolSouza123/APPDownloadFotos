@@ -2,37 +2,79 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:gravity="center"
     android:orientation="vertical"
-    android:padding="24dp">
-
-    <TextView
-        android:id="@+id/textStatus"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:gravity="center"
-        android:text="@string/status_overlay_disabled"
-        android:textSize="18sp" />
+    android:padding="20dp"
+    android:background="#F8F9FA">
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:gravity="center"
-        android:text="@string/instructions" />
+        android:text="Baixar Foto Instagram"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:textColor="#212529"
+        android:layout_marginBottom="16dp" />
+
+    <EditText
+        android:id="@+id/etLink"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Cole o link do post aqui..."
+        android:background="#FFFFFF"
+        android:padding="12dp"
+        android:layout_marginBottom="12dp"
+        android:textColor="#000000"
+        android:textSize="14sp" />
 
     <Button
-        android:id="@+id/buttonEnableOverlay"
-        android:layout_width="wrap_content"
+        android:id="@+id/btnDownload"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:text="@string/enable_overlay" />
+        android:text="Baixar Imagem"
+        android:backgroundTint="#007BFF"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold"
+        android:layout_marginBottom="16dp" />
 
-    <Button
-        android:id="@+id/buttonStopOverlay"
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:text="@string/stop_overlay" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Registro de Atividades (Logs):"
+            android:textStyle="bold"
+            android:textColor="#495057" />
+
+        <Button
+            android:id="@+id/btnCopyLogs"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="Copiar Logs"
+            android:textSize="11sp"
+            android:backgroundTint="#6C757D" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#1E1E1E"
+        android:padding="10dp">
+
+        <TextView
+            android:id="@+id/tvLogs"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#00FF66"
+            android:fontFamily="monospace"
+            android:textSize="12sp"
+            android:text="App pronto. Aguardando link...\n" />
+    </ScrollView>
 
 </LinearLayout>
