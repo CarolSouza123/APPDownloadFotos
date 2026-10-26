@@ -3,7 +3,6 @@
     package="com.exemplo.overlaydownloader">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -11,12 +10,11 @@
         android:label="Baixar Foto"
         android:roundIcon="@android:drawable/sym_def_app_icon"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+        android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
 
         <activity
             android:name=".MainActivity"
-            android:exported="true"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            android:exported="true">
             
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
