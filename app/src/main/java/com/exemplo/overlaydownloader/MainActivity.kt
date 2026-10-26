@@ -24,27 +24,31 @@ import java.util.regex.Pattern
 class MainActivity : AppCompatActivity() {
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Se foi aberto via menu Compartilhar
-        if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
-            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
-            val url = extractInstagramUrl(sharedText)
+        try {
+            if (intent?.action == Intent.ACTION_SEND && intent.type?.startsWith("text/") == true) {
+                val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
+                val url = extractInstagramUrl(sharedText)
 
-            if (url != null) {
-                Toast.makeText(this, "Baixando imagem com qualidade original...", Toast.LENGTH_SHORT).show()
-                downloadFromInstagramUrl(url)
+                if (url != null) {
+                    showToast("Baixando imagem com qualidade original...")
+                    processDownload(url)
+                } else {
+                    showToast("Nenhum link do Instagram válido encontrado.")
+                    finish()
+                }
             } else {
-                Toast.makeText(this, "Nenhum link do Instagram reconhecido.", Toast.LENGTH_LONG).show()
+                showToast("Para usar, abra o Instagram e toque em Compartilhar.")
                 finish()
             }
-        } else {
-            Toast.makeText(this, "Abra o Instagram e use o botão Compartilhar para usar este app.", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            showToast("Erro ao iniciar: ${e.message}")
             finish()
         }
     }
@@ -55,13 +59,14 @@ class MainActivity : AppCompatActivity() {
         return if (matcher.find()) matcher.group(0) else null
     }
 
-    private fun downloadFromInstagramUrl(postUrl: String) {
+    private fun processDownload(postUrl: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // Resolvedor público de alta resolução
-                val apiUrl = "https://api.cobalt.tools/api/json"
+                // Endpoint atualizado v10 da Cobalt
+                val apiUrl = "https://api.cobalt.tools/"
                 val jsonPayload = JSONObject().apply {
                     put("url", postUrl)
+                    put("downloadMode", "auto")
                 }
 
                 val mediaType = "application/json; charset=utf-8".toMediaType()
@@ -77,29 +82,31 @@ class MainActivity : AppCompatActivity() {
                 val response = httpClient.newCall(request).execute()
                 val responseData = response.body?.string()
 
-                if (responseData != null) {
+                if (response.isSuccessful && !responseData.isNullOrEmpty()) {
                     val json = JSONObject(responseData)
-                    val directDownloadUrl = json.optString("url")
-
-                    if (directDownloadUrl.isNotEmpty()) {
-                        saveMediaToStorage(directDownloadUrl)
-                    } else if (json.has("picker")) {
-                        // Caso seja um carrossel (múltiplas fotos)
-                        val pickerArray = json.getJSONArray("picker")
-                        if (pickerArray.length() > 0) {
-                            val firstItemUrl = pickerArray.getJSONObject(0).getString("url")
-                            saveMediaToStorage(firstItemUrl)
+                    
+                    var downloadUrl = json.optString("url", "")
+                    
+                    // Se for carrossel com múltiplas imagens
+                    if (downloadUrl.isEmpty() && json.has("picker")) {
+                        val picker = json.optJSONArray("picker")
+                        if (picker != null && picker.length() > 0) {
+                            downloadUrl = picker.getJSONObject(0).optString("url", "")
                         }
+                    }
+
+                    if (downloadUrl.isNotEmpty()) {
+                        saveMediaToStorage(downloadUrl)
                     } else {
-                        showToast("Não foi possível obter a mídia original.")
+                        showToast("Servidor não retornou a URL da imagem.")
                         finish()
                     }
                 } else {
-                    showToast("Erro de comunicação com o servidor.")
+                    showToast("Serviço temporariamente indisponível (${response.code}).")
                     finish()
                 }
             } catch (e: Exception) {
-                showToast("Falha ao processar: ${e.localizedMessage}")
+                showToast("Falha na conexão: ${e.localizedMessage}")
                 finish()
             }
         }
@@ -125,11 +132,15 @@ class MainActivity : AppCompatActivity() {
                     resolver.openOutputStream(imageUri)?.use { outputStream ->
                         inputStream.copyTo(outputStream)
                     }
-                    showToast("Imagem salva na Galeria!")
+                    showToast("Foto salva na Galeria com sucesso!")
+                } else {
+                    showToast("Erro ao criar arquivo na galeria.")
                 }
+            } else {
+                showToast("Não foi possível transferir o arquivo.")
             }
         } catch (e: Exception) {
-            showToast("Erro ao gravar arquivo: ${e.localizedMessage}")
+            showToast("Erro ao salvar arquivo: ${e.localizedMessage}")
         } finally {
             finish()
         }
@@ -137,7 +148,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showToast(msg: String) {
         Handler(Looper.getMainLooper()).post {
-            Toast.makeText(applicationContext, msg, Toast.LENGTH_SHORT).show()
+            Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show()
         }
     }
 }
