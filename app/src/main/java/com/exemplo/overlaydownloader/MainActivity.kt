@@ -12,10 +12,8 @@ import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.InputStream
 import java.util.concurrent.TimeUnit
@@ -24,8 +22,9 @@ import java.util.regex.Pattern
 class MainActivity : AppCompatActivity() {
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(25, TimeUnit.SECONDS)
+        .readTimeout(25, TimeUnit.SECONDS)
+        .followRedirects(true)
         .build()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,23 +36,24 @@ class MainActivity : AppCompatActivity() {
                 val url = extractInstagramUrl(sharedText)
 
                 if (url != null) {
-                    showToast("Baixando imagem com qualidade original...")
+                    showToast("Buscando foto em alta resolução...")
                     processDownload(url)
                 } else {
-                    showToast("Nenhum link do Instagram válido encontrado.")
+                    showToast("Link não reconhecido. Certifique-se de compartilhar um post do Instagram.")
                     finish()
                 }
             } else {
-                showToast("Para usar, abra o Instagram e toque em Compartilhar.")
+                showToast("Para baixar, toque no aviãozinho do Instagram e escolha 'Compartilhar'.")
                 finish()
             }
         } catch (e: Exception) {
-            showToast("Erro ao iniciar: ${e.message}")
+            showToast("Erro ao abrir: ${e.localizedMessage}")
             finish()
         }
     }
 
     private fun extractInstagramUrl(text: String): String? {
+        // Aceita posts normais (/p/), reels (/reel/), tv (/tv/) e remove parâmetros de rastreamento
         val pattern = Pattern.compile("https?://(www\\.)?instagram\\.com/(p|reel|tv)/[a-zA-Z0-9_-]+")
         val matcher = pattern.matcher(text)
         return if (matcher.find()) matcher.group(0) else null
@@ -62,59 +62,89 @@ class MainActivity : AppCompatActivity() {
     private fun processDownload(postUrl: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // Endpoint atualizado v10 da Cobalt
-                val apiUrl = "https://api.cobalt.tools/"
-                val jsonPayload = JSONObject().apply {
-                    put("url", postUrl)
-                    put("downloadMode", "auto")
+                // Tentativa 1: Leitura direta das tags abertas de alta resolução do Instagram
+                val directImageUrl = fetchFromDirectHtml(postUrl)
+
+                if (!directImageUrl.isNullOrEmpty()) {
+                    saveMediaToStorage(directImageUrl)
+                    return@launch
                 }
 
-                val mediaType = "application/json; charset=utf-8".toMediaType()
-                val requestBody = jsonPayload.toString().toRequestBody(mediaType)
-
-                val request = Request.Builder()
-                    .url(apiUrl)
-                    .addHeader("Accept", "application/json")
-                    .addHeader("Content-Type", "application/json")
-                    .post(requestBody)
-                    .build()
-
-                val response = httpClient.newCall(request).execute()
-                val responseData = response.body?.string()
-
-                if (response.isSuccessful && !responseData.isNullOrEmpty()) {
-                    val json = JSONObject(responseData)
-                    
-                    var downloadUrl = json.optString("url", "")
-                    
-                    // Se for carrossel com múltiplas imagens
-                    if (downloadUrl.isEmpty() && json.has("picker")) {
-                        val picker = json.optJSONArray("picker")
-                        if (picker != null && picker.length() > 0) {
-                            downloadUrl = picker.getJSONObject(0).optString("url", "")
-                        }
-                    }
-
-                    if (downloadUrl.isNotEmpty()) {
-                        saveMediaToStorage(downloadUrl)
-                    } else {
-                        showToast("Servidor não retornou a URL da imagem.")
-                        finish()
-                    }
-                } else {
-                    showToast("Serviço temporariamente indisponível (${response.code}).")
-                    finish()
+                // Tentativa 2: Fallback via endpoint aberto de mídia
+                val fallbackUrl = fetchFromFallback(postUrl)
+                if (!fallbackUrl.isNullOrEmpty()) {
+                    saveMediaToStorage(fallbackUrl)
+                    return@launch
                 }
+
+                showToast("Não foi possível encontrar a imagem. O post pode ser privado.")
+                finish()
+
             } catch (e: Exception) {
-                showToast("Falha na conexão: ${e.localizedMessage}")
+                showToast("Falha na busca: ${e.localizedMessage}")
                 finish()
             }
         }
     }
 
+    private fun fetchFromDirectHtml(postUrl: String): String? {
+        val request = Request.Builder()
+            .url(postUrl)
+            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+            .addHeader("Accept-Language", "pt-BR,pt;q=0.9,en-US;q=0.8")
+            .build()
+
+        val response = httpClient.newCall(request).execute()
+        if (!response.isSuccessful) return null
+
+        val html = response.body?.string() ?: return null
+
+        // Extrai a meta tag og:image que contém a foto original
+        val ogPattern = Pattern.compile("<meta property=\"og:image\" content=\"([^\"]+)\"")
+        val matcher = ogPattern.matcher(html)
+        if (matcher.find()) {
+            val rawUrl = matcher.group(1) ?: return null
+            return rawUrl.replace("&amp;", "&")
+        }
+        return null
+    }
+
+    private fun fetchFromFallback(postUrl: String): String? {
+        val cleanUrl = postUrl.split("?").first()
+        val requestUrl = "https://api.vkrdown.com/api/insta?url=$cleanUrl"
+
+        val request = Request.Builder()
+            .url(requestUrl)
+            .addHeader("User-Agent", "Mozilla/5.0")
+            .build()
+
+        val response = httpClient.newCall(request).execute()
+        if (!response.isSuccessful) return null
+
+        val body = response.body?.string() ?: return null
+        val json = JSONObject(body)
+
+        if (json.optBoolean("success", false) || json.has("data")) {
+            val data = json.optJSONObject("data")
+            if (data != null) {
+                val media = data.optJSONArray("media")
+                if (media != null && media.length() > 0) {
+                    return media.getJSONObject(0).optString("url")
+                }
+            }
+        }
+        return null
+    }
+
     private fun saveMediaToStorage(mediaUrl: String) {
         try {
-            val request = Request.Builder().url(mediaUrl).build()
+            showToast("Baixando arquivo...")
+
+            val request = Request.Builder()
+                .url(mediaUrl)
+                .addHeader("User-Agent", "Mozilla/5.0")
+                .build()
+
             val response = httpClient.newCall(request).execute()
             val inputStream: InputStream? = response.body?.byteStream()
 
@@ -132,15 +162,15 @@ class MainActivity : AppCompatActivity() {
                     resolver.openOutputStream(imageUri)?.use { outputStream ->
                         inputStream.copyTo(outputStream)
                     }
-                    showToast("Foto salva na Galeria com sucesso!")
+                    showToast("✓ Foto salva na galeria!")
                 } else {
-                    showToast("Erro ao criar arquivo na galeria.")
+                    showToast("Erro ao gravar arquivo na galeria.")
                 }
             } else {
-                showToast("Não foi possível transferir o arquivo.")
+                showToast("Não foi possível carregar os dados da imagem.")
             }
         } catch (e: Exception) {
-            showToast("Erro ao salvar arquivo: ${e.localizedMessage}")
+            showToast("Erro ao salvar: ${e.localizedMessage}")
         } finally {
             finish()
         }
