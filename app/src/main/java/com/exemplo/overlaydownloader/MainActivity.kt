@@ -35,8 +35,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvLogs: TextView
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(25, TimeUnit.SECONDS)
-        .readTimeout(25, TimeUnit.SECONDS)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
         .build()
 
@@ -49,7 +49,7 @@ class MainActivity : AppCompatActivity() {
         btnCopyLogs = findViewById(R.id.btnCopyLogs)
         tvLogs = findViewById(R.id.tvLogs)
 
-        appendLog("App inicializado com sucesso.")
+        appendLog("Aplicação iniciada com sucesso.")
 
         btnDownload.setOnClickListener {
             val link = etLink.text.toString().trim()
@@ -58,10 +58,10 @@ class MainActivity : AppCompatActivity() {
                 if (cleanUrl != null) {
                     startProcess(cleanUrl)
                 } else {
-                    appendLog("ERRO: Link inválido.")
+                    appendLog("ERRO: Endereço inválido.")
                 }
             } else {
-                appendLog("AVISO: Cole um link antes de clicar.")
+                appendLog("AVISO: Insira uma hiperligação antes de prosseguir.")
             }
         }
 
@@ -69,18 +69,18 @@ class MainActivity : AppCompatActivity() {
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             val clip = ClipData.newPlainText("Logs", tvLogs.text)
             clipboard.setPrimaryClip(clip)
-            Toast.makeText(this, "Logs copiados!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Registos copiados para a área de transferência!", Toast.LENGTH_SHORT).show()
         }
 
         if (intent?.action == Intent.ACTION_SEND && intent.type?.startsWith("text/") == true) {
             val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
-            appendLog("Link recebido via Compartilhar.")
+            appendLog("Hiperligação recebida por partilha.")
             etLink.setText(sharedText)
             val cleanUrl = extractInstagramUrl(sharedText)
             if (cleanUrl != null) {
                 startProcess(cleanUrl)
             } else {
-                appendLog("ERRO: Link recebido não é do Instagram.")
+                appendLog("ERRO: O texto partilhado não é do Instagram.")
             }
         }
     }
@@ -99,19 +99,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startProcess(postUrl: String) {
-        appendLog("Iniciando busca para: $postUrl")
+        appendLog("A iniciar recolha para: $postUrl")
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                appendLog("Tentativa 1: Extraindo foto em alta resolução via CDN...")
+                appendLog("A analisar metadados da publicação...")
                 val imageUrl = extractHighResImageUrl(postUrl)
 
                 if (!imageUrl.isNullOrEmpty()) {
-                    appendLog("Imagem original localizada com sucesso!")
+                    appendLog("Endereço válido obtido.")
                     saveImage(imageUrl)
                     return@launch
                 }
 
-                appendLog("ERRO: Não foi possível obter o arquivo original.")
+                appendLog("ERRO: Não foi possível obter a hiperligação da fotografia.")
             } catch (e: Exception) {
                 appendLog("EXCEÇÃO: ${e.javaClass.simpleName} - ${e.message}")
             }
@@ -120,8 +120,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun extractHighResImageUrl(postUrl: String): String? {
         val cleanUrl = postUrl.split("?").first().trimEnd('/') + "/"
-        
-        // Simula acesso por crawler oficial para o Instagram entregar metadados completos
+
         val request = Request.Builder()
             .url(cleanUrl)
             .addHeader("User-Agent", "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)")
@@ -129,50 +128,60 @@ class MainActivity : AppCompatActivity() {
             .build()
 
         val response = httpClient.newCall(request).execute()
-        appendLog("Status da requisição: ${response.code}")
+        appendLog("Resposta HTTP da página: ${response.code}")
         if (!response.isSuccessful) return null
 
         val html = response.body?.string() ?: return null
 
-        // 1. Procura URL da CDN do Instagram sem corte de proporção
-        val cdnPattern = Pattern.compile("https://scontent[^\"'\\s<>]+?(?:\\.jpg|\\.jpeg)")
-        val cdnMatcher = cdnPattern.matcher(html)
-        var bestUrl: String? = null
-
-        while (cdnMatcher.find()) {
-            val candidate = cdnMatcher.group(0)
-                ?.replace("\\u0026", "&")
-                ?.replace("&amp;", "&")
-
-            if (candidate != null && !candidate.contains("s150x150") && !candidate.contains("s320x320")) {
-                bestUrl = candidate
-                break
-            }
-        }
-
-        if (bestUrl != null) return bestUrl
-
-        // 2. Busca pela tag og:image padrão caso o CDN direto varie
+        // 1. Procura a meta tag og:image completa com todos os atributos decodificados
         val ogPattern = Pattern.compile("<meta property=\"og:image\" content=\"([^\"]+)\"")
         val ogMatcher = ogPattern.matcher(html)
         if (ogMatcher.find()) {
-            return ogMatcher.group(1)?.replace("&amp;", "&")?.replace("\\u0026", "&")
+            val raw = ogMatcher.group(1)
+            if (!raw.isNullOrEmpty()) {
+                return cleanCdnUrl(raw)
+            }
+        }
+
+        // 2. Procura hiperligações diretas na CDN do Instagram sem cortes
+        val cdnPattern = Pattern.compile("https://scontent[^\"]+?(?:\\.jpg|\\.jpeg)[^\"]*")
+        val cdnMatcher = cdnPattern.matcher(html)
+        while (cdnMatcher.find()) {
+            val candidate = cleanCdnUrl(cdnMatcher.group(0) ?: "")
+            if (!candidate.contains("s150x150") && !candidate.contains("s320x320")) {
+                return candidate
+            }
         }
 
         return null
     }
 
+    private fun cleanCdnUrl(url: String): String {
+        return url.replace("&amp;", "&")
+            .replace("\\u0026", "&")
+            .replace("\\/", "/")
+    }
+
     private fun saveImage(mediaUrl: String) {
         try {
-            appendLog("Baixando bytes da imagem original...")
+            appendLog("A transferir ficheiro binário...")
             val request = Request.Builder()
                 .url(mediaUrl)
-                .addHeader("User-Agent", "Mozilla/5.0")
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
                 .build()
 
             val response = httpClient.newCall(request).execute()
-            val inputStream: InputStream? = response.body?.byteStream()
+            appendLog("Resposta da transferência: ${response.code}")
 
+            if (!response.isSuccessful) {
+                appendLog("ERRO: O servidor da imagem rejeitou o pedido (${response.code}).")
+                return
+            }
+
+            val contentType = response.header("Content-Type", "")
+            appendLog("Tipo de conteúdo: $contentType")
+
+            val inputStream: InputStream? = response.body?.byteStream()
             if (inputStream != null) {
                 val fileName = "INSTA_${System.currentTimeMillis()}.jpg"
                 val resolver = contentResolver
@@ -187,18 +196,18 @@ class MainActivity : AppCompatActivity() {
                     resolver.openOutputStream(uri)?.use { out ->
                         inputStream.copyTo(out)
                     }
-                    appendLog("✓ SUCESSO! Foto salva em Pictures/OverlayDownloads.")
+                    appendLog("✓ Concluído com sucesso! Ficheiro íntegro guardado.")
                     Handler(Looper.getMainLooper()).post {
-                        Toast.makeText(applicationContext, "✓ Foto salva na galeria!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(applicationContext, "✓ Fotografia guardada na galeria!", Toast.LENGTH_SHORT).show()
                     }
                 } else {
-                    appendLog("ERRO: Falha ao alocar URI na galeria.")
+                    appendLog("ERRO: Falha ao criar entrada na galeria.")
                 }
             } else {
-                appendLog("ERRO: Resposta da imagem vazia.")
+                appendLog("ERRO: Fluxo de dados vazio.")
             }
         } catch (e: Exception) {
-            appendLog("ERRO ao salvar: ${e.message}")
+            appendLog("ERRO durante a gravação: ${e.message}")
         }
     }
 }
