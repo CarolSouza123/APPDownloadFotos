@@ -128,7 +128,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-        private fun fetchFromDirectHtml(postUrl: String): String? {
+                private fun fetchFromDirectHtml(postUrl: String): String? {
         return try {
             val request = Request.Builder()
                 .url(postUrl)
@@ -167,8 +167,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-        }
-    }
 
     private fun fetchFromFallback(postUrl: String): String? {
         return try {
