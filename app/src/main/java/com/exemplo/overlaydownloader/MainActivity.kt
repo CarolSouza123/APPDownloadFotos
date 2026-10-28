@@ -20,7 +20,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONObject
 import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -70,10 +69,9 @@ class MainActivity : AppCompatActivity() {
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             val clip = ClipData.newPlainText("Logs", tvLogs.text)
             clipboard.setPrimaryClip(clip)
-            Toast.makeText(this, "Logs copiados para a área de transferência!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Logs copiados!", Toast.LENGTH_SHORT).show()
         }
 
-        // Verifica se foi aberto via "Compartilhar"
         if (intent?.action == Intent.ACTION_SEND && intent.type?.startsWith("text/") == true) {
             val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
             appendLog("Link recebido via Compartilhar.")
@@ -104,100 +102,75 @@ class MainActivity : AppCompatActivity() {
         appendLog("Iniciando busca para: $postUrl")
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                appendLog("Tentativa 1: Lendo metadados diretos...")
-                val directUrl = fetchFromDirectHtml(postUrl)
+                appendLog("Tentativa 1: Extraindo foto em alta resolução via CDN...")
+                val imageUrl = extractHighResImageUrl(postUrl)
 
-                if (!directUrl.isNullOrEmpty()) {
-                    appendLog("Imagem encontrada via HTML direto!")
-                    saveImage(directUrl)
+                if (!imageUrl.isNullOrEmpty()) {
+                    appendLog("Imagem original localizada com sucesso!")
+                    saveImage(imageUrl)
                     return@launch
                 }
 
-                appendLog("Tentativa 2: Consultando API auxiliar...")
-                val fallbackUrl = fetchFromFallback(postUrl)
-                if (!fallbackUrl.isNullOrEmpty()) {
-                    appendLog("Imagem encontrada via API auxiliar!")
-                    saveImage(fallbackUrl)
-                    return@launch
-                }
-
-                appendLog("ERRO: Nenhuma mídia pública encontrada.")
+                appendLog("ERRO: Não foi possível obter o arquivo original.")
             } catch (e: Exception) {
                 appendLog("EXCEÇÃO: ${e.javaClass.simpleName} - ${e.message}")
             }
         }
     }
 
-                private fun fetchFromDirectHtml(postUrl: String): String? {
-        return try {
-            val request = Request.Builder()
-                .url(postUrl)
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
-                .addHeader("Accept-Language", "pt-BR,pt;q=0.9,en-US;q=0.8")
-                .build()
+    private fun extractHighResImageUrl(postUrl: String): String? {
+        val cleanUrl = postUrl.split("?").first().trimEnd('/') + "/"
+        
+        // Simula acesso por crawler oficial para o Instagram entregar metadados completos
+        val request = Request.Builder()
+            .url(cleanUrl)
+            .addHeader("User-Agent", "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)")
+            .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .build()
 
-            val response = httpClient.newCall(request).execute()
-            appendLog("HTML status code: ${response.code}")
-            if (!response.isSuccessful) return null
+        val response = httpClient.newCall(request).execute()
+        appendLog("Status da requisição: ${response.code}")
+        if (!response.isSuccessful) return null
 
-            val html = response.body?.string() ?: return null
+        val html = response.body?.string() ?: return null
 
-            // 1. Procura a imagem completa sem corte no JSON interno da página
-            val fullImagePattern = Pattern.compile("\"display_url\":\"([^\"]+)\"")
-            val fullMatcher = fullImagePattern.matcher(html)
-            if (fullMatcher.find()) {
-                val rawUrl = fullMatcher.group(1)?.replace("\\u0026", "&")
-                if (!rawUrl.isNullOrEmpty()) {
-                    appendLog("Imagem original (sem corte) localizada.")
-                    return rawUrl
-                }
+        // 1. Procura URL da CDN do Instagram sem corte de proporção
+        val cdnPattern = Pattern.compile("https://scontent[^\"'\\s<>]+?(?:\\.jpg|\\.jpeg)")
+        val cdnMatcher = cdnPattern.matcher(html)
+        var bestUrl: String? = null
+
+        while (cdnMatcher.find()) {
+            val candidate = cdnMatcher.group(0)
+                ?.replace("\\u0026", "&")
+                ?.replace("&amp;", "&")
+
+            if (candidate != null && !candidate.contains("s150x150") && !candidate.contains("s320x320")) {
+                bestUrl = candidate
+                break
             }
-
-            // 2. Se não achar no JSON interno, usa og:image como reserva
-            val ogPattern = Pattern.compile("<meta property=\"og:image\" content=\"([^\"]+)\"")
-            val ogMatcher = ogPattern.matcher(html)
-            if (ogMatcher.find()) {
-                ogMatcher.group(1)?.replace("&amp;", "&")
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            appendLog("Falha HTML: ${e.message}")
-            null
         }
-    }
 
+        if (bestUrl != null) return bestUrl
 
-    private fun fetchFromFallback(postUrl: String): String? {
-        return try {
-            val clean = postUrl.split("?").first()
-            val request = Request.Builder()
-                .url("https://api.vkrdown.com/api/insta?url=$clean")
-                .build()
-
-            val response = httpClient.newCall(request).execute()
-            appendLog("Fallback status code: ${response.code}")
-            if (!response.isSuccessful) return null
-
-            val body = response.body?.string() ?: return null
-            val json = JSONObject(body)
-            val data = json.optJSONObject("data")
-            val media = data?.optJSONArray("media")
-            if (media != null && media.length() > 0) {
-                media.getJSONObject(0).optString("url")
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            appendLog("Falha Fallback: ${e.message}")
-            null
+        // 2. Busca pela tag og:image padrão caso o CDN direto varie
+        val ogPattern = Pattern.compile("<meta property=\"og:image\" content=\"([^\"]+)\"")
+        val ogMatcher = ogPattern.matcher(html)
+        if (ogMatcher.find()) {
+            return ogMatcher.group(1)?.replace("&amp;", "&")?.replace("\\u0026", "&")
         }
+
+        return null
     }
 
     private fun saveImage(mediaUrl: String) {
         try {
-            appendLog("Baixando bytes da imagem...")
-            val response = httpClient.newCall(Request.Builder().url(mediaUrl).build()).execute()
+            appendLog("Baixando bytes da imagem original...")
+            val request = Request.Builder()
+                .url(mediaUrl)
+                .addHeader("User-Agent", "Mozilla/5.0")
+                .build()
+
+            val response = httpClient.newCall(request).execute()
             val inputStream: InputStream? = response.body?.byteStream()
 
             if (inputStream != null) {
@@ -215,6 +188,9 @@ class MainActivity : AppCompatActivity() {
                         inputStream.copyTo(out)
                     }
                     appendLog("✓ SUCESSO! Foto salva em Pictures/OverlayDownloads.")
+                    Handler(Looper.getMainLooper()).post {
+                        Toast.makeText(applicationContext, "✓ Foto salva na galeria!", Toast.LENGTH_SHORT).show()
+                    }
                 } else {
                     appendLog("ERRO: Falha ao alocar URI na galeria.")
                 }
