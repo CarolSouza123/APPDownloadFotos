@@ -128,11 +128,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun fetchFromDirectHtml(postUrl: String): String? {
+        private fun fetchFromDirectHtml(postUrl: String): String? {
         return try {
             val request = Request.Builder()
                 .url(postUrl)
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                .addHeader("Accept-Language", "pt-BR,pt;q=0.9,en-US;q=0.8")
                 .build()
 
             val response = httpClient.newCall(request).execute()
@@ -140,15 +141,32 @@ class MainActivity : AppCompatActivity() {
             if (!response.isSuccessful) return null
 
             val html = response.body?.string() ?: return null
-            val matcher = Pattern.compile("<meta property=\"og:image\" content=\"([^\"]+)\"").matcher(html)
-            if (matcher.find()) {
-                matcher.group(1)?.replace("&amp;", "&")
+
+            // 1. Procura a imagem completa sem corte no JSON interno da página
+            val fullImagePattern = Pattern.compile("\"display_url\":\"([^\"]+)\"")
+            val fullMatcher = fullImagePattern.matcher(html)
+            if (fullMatcher.find()) {
+                val rawUrl = fullMatcher.group(1)?.replace("\\u0026", "&")
+                if (!rawUrl.isNullOrEmpty()) {
+                    appendLog("Imagem original (sem corte) localizada.")
+                    return rawUrl
+                }
+            }
+
+            // 2. Se não achar no JSON interno, usa og:image como reserva
+            val ogPattern = Pattern.compile("<meta property=\"og:image\" content=\"([^\"]+)\"")
+            val ogMatcher = ogPattern.matcher(html)
+            if (ogMatcher.find()) {
+                ogMatcher.group(1)?.replace("&amp;", "&")
             } else {
                 null
             }
         } catch (e: Exception) {
             appendLog("Falha HTML: ${e.message}")
             null
+        }
+    }
+
         }
     }
 
